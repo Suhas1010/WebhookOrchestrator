@@ -1,0 +1,26 @@
+{
+  "name": "hookrelay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A reliable, multi-tenant webhook delivery platform",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^5.0.0",
+    "pg": "^8.23.1"
+  }
+}
