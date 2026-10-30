@@ -2,9 +2,11 @@ import type {
   Request,
   Response,
   NextFunction,
+  RequestHandler,
 } from "express";
 
 import jwt from "jsonwebtoken";
+
 import { env } from "../config/env.js";
 import { ApiError } from "../utils/api-error.js";
 import { authenticateApiKey } from "../services/auth.service.js";
@@ -23,49 +25,53 @@ declare global {
   }
 }
 
-export function authenticateJwt(
+export const authenticateJwt: RequestHandler = (
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
-): void {
+) => {
   const authorization = req.headers.authorization;
 
-  if (!authorization?.startsWith("Bearer ")) {
-    next(new ApiError(401, "Authentication required"));
-    return;
+  if (!authorization || !authorization.startsWith("Bearer ")) {
+    return next(new ApiError(401, "Authentication required"));
+  }
+
+  const token = authorization.slice(7);
+
+  if (!token) {
+    return next(new ApiError(401, "Authentication token missing"));
   }
 
   try {
-    const token = authorization.slice(7);
-    const payload = jwt.verify(token, env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
 
     if (
-      typeof payload === "string" ||
-      typeof payload.sub !== "string" ||
-      typeof payload.tenantId !== "string" ||
-      typeof payload.role !== "string"
+      typeof decoded === "string" ||
+      typeof decoded.sub !== "string" ||
+      typeof decoded.tenantId !== "string" ||
+      typeof decoded.role !== "string"
     ) {
-      throw new Error("Invalid token payload");
+      return next(new ApiError(401, "Invalid authentication token"));
     }
 
     req.auth = {
-      userId: payload.sub,
-      tenantId: payload.tenantId,
-      role: payload.role,
+      userId: decoded.sub,
+      tenantId: decoded.tenantId,
+      role: decoded.role,
       authMethod: "jwt",
     };
 
     next();
   } catch {
-    next(new ApiError(401, "Invalid or expired token"));
+    next(new ApiError(401, "Invalid or expired authentication token"));
   }
-}
+};
 
-export async function authenticateApiKeyMiddleware(
+export const authenticateApiKeyMiddleware: RequestHandler = async (
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
-): Promise<void> {
+) => {
   try {
     const key = req.header("x-api-key");
 
@@ -82,7 +88,29 @@ export async function authenticateApiKeyMiddleware(
     };
 
     next();
-  } catch (error) {
+  } catch (error: unknown) {
     next(error);
   }
+};
+
+export function requireRole(role: string): RequestHandler {
+  return (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    if (req.auth?.authMethod !== "jwt") {
+      return next(
+        new ApiError(403, "JWT authentication is required for this action")
+      );
+    }
+
+    if (req.auth.role !== role) {
+      return next(
+        new ApiError(403, "You do not have permission to perform this action")
+      );
+    }
+
+    next();
+  };
 }
