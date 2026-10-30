@@ -1,15 +1,11 @@
 import type { Request, Response } from "express";
-
+import { loginUser, registerTenant } from "../services/auth.service.js";
 import {
-  loginUser,
-  registerTenant,
   createApiKey,
   listApiKeys,
   revokeApiKey,
 } from "../services/auth.service.js";
-
 import { ApiError } from "../utils/api-error.js";
-
 export async function registerController(
   req: Request,
   res: Response
@@ -28,7 +24,6 @@ export async function registerController(
     data: tenant,
   });
 }
-
 export async function loginController(
   req: Request,
   res: Response
@@ -49,12 +44,21 @@ export async function createApiKeyController(
   res: Response
 ): Promise<void> {
   const tenantId = req.auth?.tenantId;
+  const { name } = req.body ?? {};
 
   if (!tenantId) {
     throw new ApiError(401, "Authentication required");
   }
 
-  const apiKey = await createApiKey(tenantId);
+  if (
+    typeof name !== "string" ||
+    name.trim().length === 0 ||
+    name.trim().length > 100
+  ) {
+    throw new ApiError(400, "Name must contain 1–100 characters");
+  }
+
+  const apiKey = await createApiKey(tenantId, name);
 
   res.status(201).json({
     status: "success",
@@ -91,13 +95,13 @@ export async function revokeApiKeyController(
     throw new ApiError(401, "Authentication required");
   }
 
-  const keyId = req.params.id;
+const keyId = req.params.id;
 
-  if (typeof keyId !== "string" || keyId.trim() === "") {
-    throw new ApiError(400, "Valid API key ID is required");
-  }
+if (typeof keyId !== "string" || keyId.trim() === "") {
+  throw new ApiError(400, "Valid API key ID is required");
+}
 
-  await revokeApiKey(tenantId, keyId);
+await revokeApiKey(tenantId, keyId);
 
   res.status(200).json({
     status: "success",
