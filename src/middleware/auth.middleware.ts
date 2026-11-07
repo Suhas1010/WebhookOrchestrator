@@ -9,19 +9,15 @@ import { env } from "../config/env.js";
 import { ApiError } from "../utils/api-error.js";
 import { authenticateApiKey } from "../services/auth.service.js";
 
-declare global {
-  namespace Express {
-    interface Request {
-      auth?: {
-        userId?: string;
-        tenantId: string;
-        role?: string;
-        apiKeyId?: string;
-        authMethod: "jwt" | "api-key";
-      };
-    }
-  }
-}
+// ─────────────────────────────────────────────
+// EXPRESS REQUEST TYPE EXTENSION
+// ─────────────────────────────────────────────
+
+
+
+// ─────────────────────────────────────────────
+// JWT AUTHENTICATION
+// ─────────────────────────────────────────────
 
 export function authenticateJwt(
   req: Request,
@@ -37,6 +33,7 @@ export function authenticateJwt(
 
   try {
     const token = authorization.slice(7);
+
     const payload = jwt.verify(token, env.JWT_SECRET);
 
     if (
@@ -60,6 +57,10 @@ export function authenticateJwt(
     next(new ApiError(401, "Invalid or expired token"));
   }
 }
+
+// ─────────────────────────────────────────────
+// API KEY AUTHENTICATION
+// ─────────────────────────────────────────────
 
 export async function authenticateApiKeyMiddleware(
   req: Request,
@@ -85,4 +86,33 @@ export async function authenticateApiKeyMiddleware(
   } catch (error) {
     next(error);
   }
+}
+
+// ─────────────────────────────────────────────
+// ROLE-BASED AUTHORIZATION
+// ─────────────────────────────────────────────
+
+export function requireRole(role: string) {
+  return (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+  ): void => {
+    if (!req.auth) {
+      next(new ApiError(401, "Authentication required"));
+      return;
+    }
+
+    if (req.auth.authMethod !== "jwt") {
+      next(new ApiError(403, "JWT authentication required"));
+      return;
+    }
+
+    if (req.auth.role !== role) {
+      next(new ApiError(403, "Insufficient permissions"));
+      return;
+    }
+
+    next();
+  };
 }

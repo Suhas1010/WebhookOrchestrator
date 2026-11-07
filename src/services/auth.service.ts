@@ -1,4 +1,3 @@
-
 import argon2 from "argon2";
 import pool from "../db/pool.js";
 import { ApiError } from "../utils/api-error.js";
@@ -11,6 +10,10 @@ interface RegisterInput {
   email: string;
   password: string;
 }
+
+// ─────────────────────────────────────────────
+// REGISTER TENANT
+// ─────────────────────────────────────────────
 
 export async function registerTenant(input: RegisterInput) {
   const name = input.name.trim();
@@ -46,7 +49,7 @@ export async function registerTenant(input: RegisterInput) {
     await client.query("COMMIT");
 
     return {
-      tenantId: tenant.id,
+      tenantId: String(tenant.id),
       name: tenant.name,
       email,
       createdAt: tenant.created_at,
@@ -68,6 +71,10 @@ export async function registerTenant(input: RegisterInput) {
     client.release();
   }
 }
+
+// ─────────────────────────────────────────────
+// LOGIN USER
+// ─────────────────────────────────────────────
 
 export async function loginUser(
   email: string,
@@ -116,32 +123,43 @@ export async function loginUser(
   };
 }
 
-export async function createApiKey(
-  tenantId: string,
-  name: string
-) {
+// ─────────────────────────────────────────────
+// CREATE API KEY
+// ─────────────────────────────────────────────
+
+export async function createApiKey(tenantId: string) {
+  // Generate a cryptographically secure API key
   const key = `whk_${randomBytes(32).toString("hex")}`;
 
+  // Store only its SHA-256 hash in the database
   const keyHash = createHash("sha256")
     .update(key)
     .digest("hex");
 
+  // Store a short prefix for identification
+  const keyPrefix = key.slice(0, 12);
+
   const result = await pool.query(
-    `INSERT INTO api_keys (tenant_id, name, key_hash)
+    `INSERT INTO api_keys (tenant_id, key_prefix, key_hash)
      VALUES ($1, $2, $3)
-     RETURNING id, name, created_at`,
-    [tenantId, name.trim(), keyHash]
+     RETURNING id, key_prefix, created_at`,
+    [tenantId, keyPrefix, keyHash]
   );
 
+  // Return the actual key only once
   return {
     ...result.rows[0],
     key,
   };
 }
 
+// ─────────────────────────────────────────────
+// LIST API KEYS
+// ─────────────────────────────────────────────
+
 export async function listApiKeys(tenantId: string) {
   const result = await pool.query(
-    `SELECT id, name, created_at, revoked_at
+    `SELECT id, key_prefix, created_at, revoked_at, last_used_at
      FROM api_keys
      WHERE tenant_id = $1
      ORDER BY created_at DESC`,
@@ -150,6 +168,10 @@ export async function listApiKeys(tenantId: string) {
 
   return result.rows;
 }
+
+// ─────────────────────────────────────────────
+// REVOKE API KEY
+// ─────────────────────────────────────────────
 
 export async function revokeApiKey(
   tenantId: string,
@@ -170,16 +192,27 @@ export async function revokeApiKey(
   }
 }
 
+// ─────────────────────────────────────────────
+// AUTHENTICATE API KEY
+// ─────────────────────────────────────────────
+
 export async function authenticateApiKey(key: string) {
+  // Basic format validation
+  if (!key || !/^whk_[a-f0-9]{64}$/.test(key)) {
+    throw new ApiError(401, "Invalid API key");
+  }
+
   const keyHash = createHash("sha256")
     .update(key)
     .digest("hex");
 
+  // Verify the key and update its last-used timestamp
   const result = await pool.query(
-    `SELECT id, tenant_id
-     FROM api_keys
+    `UPDATE api_keys
+     SET last_used_at = NOW()
      WHERE key_hash = $1
-       AND revoked_at IS NULL`,
+       AND revoked_at IS NULL
+     RETURNING id, tenant_id`,
     [keyHash]
   );
 
